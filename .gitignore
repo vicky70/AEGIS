@@ -1,0 +1,55 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+eggs/
+*.egg
+
+# Virtual Environment
+venv/
+.venv/
+env/
+aegisvenv
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Logs
+*.log
+logs/
+
+# Docker volumes
+mongodb_data/
+redis_data/
+
+# Claude
+.claude/
+
+
+# extra files
+SCHEMA_INTEGRATION_CHANGELOG.md
+walkthrough.md.resolved
+AEGIS_Phase2_Desktop_Monitor_v2.md

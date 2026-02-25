@@ -1,0 +1,54 @@
+version: "3.9"
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: aegis-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: aegis
+      MONGO_INITDB_ROOT_PASSWORD: aegis_dev_password
+      MONGO_INITDB_DATABASE: aegis
+    volumes:
+      - mongodb_data:/data/db
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: aegis-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass aegis_redis_dev
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  mongo-express:
+    image: mongo-express:1.0
+    container_name: aegis-mongo-express
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: aegis
+      ME_CONFIG_MONGODB_ADMINPASSWORD: aegis_dev_password
+      ME_CONFIG_MONGODB_URL: mongodb://aegis:aegis_dev_password@mongodb:27017/
+      ME_CONFIG_BASICAUTH: "false"
+    depends_on:
+      - mongodb
+    restart: unless-stopped
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: aegis-redis-commander
+    ports:
+      - "8082:8081"
+    environment:
+      REDIS_HOSTS: local:redis:6379:0:aegis_redis_dev
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:
+  redis_data:

@@ -1,0 +1,10 @@
+# AEGIS Development Configuration
+# Values here are overlaid by environment variables
+
+env: development
+debug: true
+host: "127.0.0.1"
+port: 8000
+workers: 1
+cors_origins:
+  - "*"

@@ -1,0 +1,6 @@
+pywin32
+psutil
+pynput
+requests
+pyyaml
+pyinstaller

@@ -1,0 +1,46 @@
+server:
+  base_url: http://localhost:8000
+
+component:
+  id: desktop_client_main
+
+activity:
+  poll_interval_seconds: 5
+  idle_threshold_seconds: 60
+
+heartbeat:
+  interval_seconds: 30
+  failure_grace_seconds: 90
+
+uploader:
+  batch_interval_seconds: 60
+
+tamper_detection:
+  event_ids_to_monitor: [7036, 7040, 7034, 4656]
+
+app_categories:
+  productive:
+    - code.exe
+    - pycharm64.exe
+    - goland64.exe
+    - windowsterminal.exe
+    - powershell.exe
+    - notepad++.exe
+    - obsidian.exe
+    - devenv.exe
+  communication:
+    - slack.exe
+    - teams.exe
+    - discord.exe
+    - outlook.exe
+    - thunderbird.exe
+  distraction:
+    - steam.exe
+    - epicgameslauncher.exe
+  neutral:
+    - explorer.exe
+    - taskmgr.exe
+    - mmc.exe
+    - chrome.exe
+    - firefox.exe
+    - msedge.exe
