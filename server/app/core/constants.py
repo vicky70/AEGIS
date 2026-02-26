@@ -18,6 +18,7 @@ class TaskStatus(StrEnum):
     ACTIVE = "active"
     COMPLETED = "completed"
     FAILED = "failed"
+    OVERDUE = "overdue"
     SKIPPED = "skipped"
 
 

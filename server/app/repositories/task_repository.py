@@ -97,6 +97,18 @@ class TaskRepository(BaseRepository):
             limit=100,
         )
 
+    async def get_overdue_active_tasks(self) -> list[dict[str, Any]]:
+        """Find active tasks whose scheduled_end has passed."""
+        now = datetime.now(timezone.utc)
+        return await self.find_many(
+            filter_={
+                "status": TaskStatus.ACTIVE,
+                "scheduled_end": {"$lte": now},
+            },
+            sort=[("scheduled_end", 1)],
+            limit=100,
+        )
+
     async def get_user_stats(self, user_id: str) -> dict[str, int]:
         pipeline = [
             {"$match": {"user_id": user_id}},

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import platform
 import threading
 import time
 from datetime import datetime, timezone
@@ -61,6 +62,9 @@ class Orchestrator:
 
     def start_all(self) -> None:
         """Start all components in dependency order, then the health monitor."""
+        # 0. Ensure this client is registered with the server
+        self._ensure_registered()
+
         # 1. Tracker first (uploader depends on it)
         self._tracker.start()
         self._components["ActivityTracker"] = self._tracker
@@ -100,6 +104,46 @@ class Orchestrator:
             self._health_thread.join(timeout=5)
 
         logger.info("Orchestrator: all components stopped")
+
+    # -- registration ------------------------------------------------------
+
+    def _ensure_registered(self) -> None:
+        """Check if this component is registered with the server; register if not."""
+        url = f"{self._base_url}/api/v1/system/components/{self._component_id}"
+        try:
+            resp = requests.get(url, timeout=10)
+            if resp.status_code == 200:
+                logger.info("Component '%s' already registered", self._component_id)
+                return
+        except requests.ConnectionError:
+            logger.warning(
+                "Server unreachable at %s — skipping registration check", self._base_url
+            )
+            return
+        except Exception as exc:
+            logger.warning("Registration check failed: %s", exc)
+            return
+
+        # Component not found (404) — register it
+        logger.info("Component '%s' not found — registering now", self._component_id)
+        register_url = f"{self._base_url}/api/v1/system/components/register"
+        payload = {
+            "component_id": self._component_id,
+            "component_type": "desktop_client",
+            "device_id": platform.node(),
+            "public_key": "",
+            "expected_hash": "",
+        }
+        try:
+            resp = requests.post(register_url, json=payload, timeout=10)
+            if resp.status_code == 201:
+                logger.info("Component '%s' registered successfully", self._component_id)
+            else:
+                logger.error(
+                    "Registration returned %d: %s", resp.status_code, resp.text
+                )
+        except Exception as exc:
+            logger.error("Registration request failed: %s", exc)
 
     # -- health monitoring -------------------------------------------------
 

@@ -285,10 +285,14 @@ class EventListener:
                 started_at = datetime.fromisoformat(
                     started_at_str.replace("Z", "+00:00")
                 )
+                if started_at.tzinfo is None:
+                    started_at = started_at.replace(tzinfo=timezone.utc)
             if sched_end_str:
                 sched_end = datetime.fromisoformat(
                     sched_end_str.replace("Z", "+00:00")
                 )
+                if sched_end.tzinfo is None:
+                    sched_end = sched_end.replace(tzinfo=timezone.utc)
 
             minutes_elapsed = None
             minutes_remaining = None

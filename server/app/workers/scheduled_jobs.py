@@ -10,7 +10,9 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from server.app.core.constants import TaskStatus
 from server.app.repositories.evidence_repository import EvidenceRepository
+from server.app.repositories.task_repository import TaskRepository
 from server.app.services.maintenance_service import MaintenanceService
 from server.app.services.penalty_service import PenaltyService
 from server.app.services.scheduler_service import SchedulerService
@@ -26,6 +28,7 @@ async def scheduled_jobs_loop() -> None:
     penalty_service = PenaltyService()
     evidence_repo = EvidenceRepository()
     maintenance_service = MaintenanceService()
+    task_repo = TaskRepository()
 
     logger.info("Scheduled jobs worker started (interval=%ds)", SCHEDULER_INTERVAL_SECONDS)
 
@@ -50,6 +53,16 @@ async def scheduled_jobs_loop() -> None:
             expired = await maintenance_service.expire_stale_windows()
             if expired:
                 logger.info("Expired %d stale maintenance windows", expired)
+
+            # 5. Mark active tasks past their scheduled_end as overdue
+            overdue_tasks = await task_repo.get_overdue_active_tasks()
+            for task in overdue_tasks:
+                await task_repo.update_one(
+                    str(task["_id"]),
+                    {"status": TaskStatus.OVERDUE},
+                )
+            if overdue_tasks:
+                logger.info("Marked %d tasks as overdue", len(overdue_tasks))
 
         except Exception:
             logger.exception("Error in scheduled jobs loop")

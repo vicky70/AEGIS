@@ -23,6 +23,7 @@ except ImportError:
     # Allow import on non-Windows for linting.
     servicemanager = win32event = win32service = win32serviceutil = None  # type: ignore[assignment]
 
+from logging_config import setup_logging
 from orchestrator import Orchestrator
 
 logger = logging.getLogger("aegis.service")
@@ -55,6 +56,8 @@ class AEGISMonitorService(win32serviceutil.ServiceFramework):
 
     def SvcDoRun(self) -> None:
         """Called by SCM when the service starts."""
+        setup_logging()
+
         servicemanager.LogMsg(
             servicemanager.EVENTLOG_INFORMATION_TYPE,
             servicemanager.PYS_SERVICE_STARTED,

@@ -266,11 +266,14 @@ class ActivityTracker:
                         sched_end = datetime.fromisoformat(
                             sched_end_str.replace("Z", "+00:00")
                         )
+                        if sched_end.tzinfo is None:
+                            sched_end = sched_end.replace(tzinfo=timezone.utc)
                     else:
                         sched_end = sched_end_str
                     if datetime.now(timezone.utc) >= sched_end:
                         should_close = True
-                except Exception:
+                except Exception as e:
+                    logger.exception("time failed timezone problem.")
                     pass
 
             # Condition 2: stop event
