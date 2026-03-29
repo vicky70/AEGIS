@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from server.app.core.constants import (
@@ -35,14 +35,41 @@ class TaskService:
 
     async def create_task(self, user_id: str, data: TaskCreate) -> dict[str, Any]:
         now = datetime.now(timezone.utc)
+
+        # 1. Title cannot be empty/whitespace
+        if not data.title.strip():
+            raise ValidationException("Title cannot be empty or whitespace.")
+
+        # 2. Convert to UTC for consistent comparison and storage
+        start_utc = data.scheduled_start.astimezone(timezone.utc)
+        end_utc = data.scheduled_end.astimezone(timezone.utc)
+
+        # 3. scheduled_start must be in the future (full datetime check)
+        if start_utc <= now:
+            raise ValidationException("scheduled_start must be in the future.")
+
+        # 4. scheduled_end must be after scheduled_start
+        if end_utc <= start_utc:
+            raise ValidationException("scheduled_end must be after scheduled_start.")
+
+        # 5. Conflict check (use UTC values for DB query)
+        conflicting = await self.task_repo.find_conflicting_task(
+            start_utc, end_utc
+        )
+        if conflicting:
+            raise ValidationException(
+                f"Time conflict with existing task '{conflicting['title']}'. "
+                f"A 1-minute gap is required between tasks."
+            )
+
         doc = {
             "user_id": user_id,
-            "title": data.title,
+            "title": data.title.strip(),
             "description": data.description,
             "category": data.category.value,
             "priority": data.priority,
-            "scheduled_start": data.scheduled_start,
-            "scheduled_end": data.scheduled_end,
+            "scheduled_start": start_utc,
+            "scheduled_end": end_utc,
             "duration_minutes": data.duration_minutes,
             "recurrence": data.recurrence.model_dump() if data.recurrence else None,
             "verification": data.verification.model_dump(),
@@ -54,6 +81,7 @@ class TaskService:
             "created_at": now,
             "updated_at": now,
         }
+
         task_id = await self.task_repo.insert_one(doc)
         task = await self.task_repo.find_by_id(task_id)
         logger.info("Task created: %s for user %s", task_id, user_id)
@@ -65,16 +93,17 @@ class TaskService:
         })
         return task
 
-    async def get_task(self, task_id: str) -> dict[str, Any]:
-        task = await self.task_repo.find_by_id(task_id)
-        if not task:
-            raise TaskNotFoundException(task_id)
-        return task
-
     async def update_task(self, task_id: str, data: TaskUpdate) -> dict[str, Any]:
         existing = await self.task_repo.find_by_id(task_id)
         if not existing:
             raise TaskNotFoundException(task_id)
+
+        if existing.get("status") != TaskStatus.PENDING:
+            raise ValidationException("Only pending tasks can be updated.")
+
+        now = datetime.now(timezone.utc)
+        if existing.get("scheduled_start") and existing["scheduled_start"] <= now:
+            raise ValidationException("Cannot update a task whose scheduled time has passed.")
 
         update = data.model_dump(exclude_unset=True)
         if "recurrence" in update and update["recurrence"]:
@@ -84,6 +113,25 @@ class TaskService:
         if "category" in update:
             update["category"] = update["category"].value if update["category"] else None
 
+        # Convert incoming datetimes to UTC for storage
+        if "scheduled_start" in update and update["scheduled_start"] is not None:
+            update["scheduled_start"] = update["scheduled_start"].astimezone(timezone.utc)
+        if "scheduled_end" in update and update["scheduled_end"] is not None:
+            update["scheduled_end"] = update["scheduled_end"].astimezone(timezone.utc)
+
+        new_start = update.get("scheduled_start", existing["scheduled_start"])
+        new_end = update.get("scheduled_end", existing["scheduled_end"])
+
+        if "scheduled_start" in update or "scheduled_end" in update:
+            conflicting = await self.task_repo.find_conflicting_task(
+                new_start, new_end, exclude_id=task_id
+            )
+            if conflicting:
+                raise ValidationException(
+                    f"Time conflict with existing task '{conflicting['title']}'. "
+                    f"A 1-minute gap is required between tasks."
+                )
+
         task = await self.task_repo.update_one(task_id, update)
         logger.info("Task updated: %s", task_id)
         return task
@@ -92,6 +140,8 @@ class TaskService:
         existing = await self.task_repo.find_by_id(task_id)
         if not existing:
             raise TaskNotFoundException(task_id)
+        if existing.get("status") == TaskStatus.ACTIVE:
+            raise ValidationException("Cannot delete an active task.")
         return await self.task_repo.delete_one(task_id)
 
     async def list_tasks(
@@ -118,12 +168,29 @@ class TaskService:
         return await self.task_repo.get_upcoming(user_id)
 
     async def get_active_task(self, user_id: str) -> Optional[dict[str, Any]]:
-        return await self.task_repo.get_active_task(user_id)
+        # check if any task is currently active for the user
+        active = await self.task_repo.get_active_task(user_id)
+        
+        if active:
+            now = datetime.now(timezone.utc)
+            if active.get("scheduled_end") and active["scheduled_end"] <= now:
+                await self.mark_task_overdue(active["id"], user_id)
+            else:
+                return active
+            
+        next_task = await self.task_repo.get_next_pending_task(user_id)
+        if next_task:
+            return await self.start_task(next_task["id"], user_id)
+        
+        return None
 
     async def start_task(self, task_id: str, user_id: str) -> dict[str, Any]:
         task = await self.task_repo.find_by_id(task_id)
         if not task:
             raise TaskNotFoundException(task_id)
+        
+        if task.get("status") == TaskStatus.COMPLETED:
+            raise ValidationException("Cannot change status of a completed task.")
 
         # Check no other task is active
         active = await self.task_repo.get_active_task(user_id)
@@ -150,6 +217,9 @@ class TaskService:
         task = await self.task_repo.find_by_id(task_id)
         if not task:
             raise TaskNotFoundException(task_id)
+        
+        if task.get("status") == TaskStatus.COMPLETED:
+            raise ValidationException("Cannot change status of a completed task.")
 
         updated = await self.task_repo.update_one(
             task_id, {"status": TaskStatus.COMPLETED}
@@ -173,6 +243,9 @@ class TaskService:
         task = await self.task_repo.find_by_id(task_id)
         if not task:
             raise TaskNotFoundException(task_id)
+        
+        if task.get("status") == TaskStatus.COMPLETED:
+            raise ValidationException("Cannot change status of a completed task.")
 
         updated = await self.task_repo.update_one(
             task_id, {"status": TaskStatus.SKIPPED}
@@ -180,5 +253,34 @@ class TaskService:
         logger.info("Task skipped: %s reason: %s", task_id, reason)
         return updated
 
+    async def mark_task_overdue(self, task_id: str, user_id: str) -> dict[str, Any]:
+        task = await self.task_repo.find_by_id(task_id)
+        if not task:
+            raise TaskNotFoundException(task_id)
+        
+        if task.get("status") == TaskStatus.COMPLETED:
+            raise ValidationException("Cannot change status of a completed task.")
+
+        updated = await self.task_repo.update_one(
+            task_id, {"status": TaskStatus.OVERDUE}
+        )
+        logger.info("Task marked overdue: %s", task_id)
+
+        await self.event_bus.emit(CHANNEL_TASKS, {
+            "event_type": "task_overdue",
+            "task_id": task_id,
+            "user_id": user_id,
+        })
+        await self.event_repo.create_event(
+            event_type=EventType.TASK_OVERDUE,
+            severity=Severity.WARNING,
+            user_id=user_id,
+            details={"task_id": task_id},
+        )
+        return updated
+
     async def get_user_stats(self, user_id: str) -> dict[str, Any]:
         return await self.task_repo.get_user_stats(user_id)
+    
+    async def get_today_tasks(self, user_id: str) -> list[dict[str, Any]]:
+        return await self.task_repo.get_today_tasks(user_id)

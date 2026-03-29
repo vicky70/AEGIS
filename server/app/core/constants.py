@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+from datetime import timezone, timedelta
 from enum import IntEnum, StrEnum
+
+# ── Timezone ─────────────────────────────────────────────────────
+
+IST = timezone(timedelta(hours=5, minutes=30), name="Asia/Kolkata")
 
 
 # ── Task ──────────────────────────────────────────────────────────
@@ -77,6 +82,7 @@ class EventType(StrEnum):
     TASK_STARTED = "task_started"
     TASK_COMPLETED = "task_completed"
     TASK_FAILED = "task_failed"
+    TASK_OVERDUE = "task_overdue"
 
 
 class Severity(StrEnum):
